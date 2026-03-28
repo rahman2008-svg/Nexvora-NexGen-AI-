@@ -1,39 +1,15 @@
-from tinydb import TinyDB
-from rapidfuzz import process, fuzz
-import random
+import json, os
 
-db = TinyDB('memory.json')
+MEM_FILE = 'memory.json'
 
-def save_qa(q, a):
-    db.insert({'question': q.lower(), 'answer': a})
+def load_knowledge():
+    if os.path.exists(MEM_FILE):
+        with open(MEM_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
 
-def get_all():
-    return db.all()
-
-def find_answer(question):
-    data = get_all()
-    if not data:
-        return None
-
-    questions = [i['question'] for i in data]
-
-    result = process.extractOne(
-        question.lower(),
-        questions,
-        scorer=fuzz.WRatio
-    )
-
-    if result:
-        match, score, idx = result
-
-        if score > 85:
-            return data[idx]['answer']
-
-    return None
-
-
-def random_qa():
-    data = get_all()
-    if not data:
-        return None
-    return random.choice(data)
+def add_knowledge(question, answer):
+    knowledge = load_knowledge()
+    knowledge[question] = answer
+    with open(MEM_FILE, 'w', encoding='utf-8') as f:
+        json.dump(knowledge, f, ensure_ascii=False, indent=2)

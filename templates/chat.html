@@ -1,30 +1,34 @@
-<h2>Nexvora NexGen AI 🤖</h2>
+{% extends 'base.html' %}
 
-<form id="chatForm">
-<input type="text" id="q" placeholder="Ask something">
-<button>Send</button>
-</form>
-
-<div id="ans"></div>
-
-<br>
-<a href="/teach">Teach</a> |
-<a href="/dashboard">Dashboard</a> |
-<a href="/logout">Logout</a>
+{% block content %}
+<div class="container">
+    <h2>Chat AI</h2>
+    <div id="chat-box"></div>
+    <form id="chat-form">
+        <input type="text" id="user-message" placeholder="Type your message..." required>
+        <button type="submit">Send</button>
+    </form>
+</div>
 
 <script>
-chatForm.onsubmit = async(e)=>{
-e.preventDefault()
+document.getElementById('chat-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const message = document.getElementById('user-message').value;
+    
+    const chatBox = document.getElementById('chat-box');
+    chatBox.innerHTML += `<div class="user-msg">You: ${message}</div>`;
 
-let q = document.getElementById("q").value
+    const res = await fetch('/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message})
+    });
 
-let res = await fetch("/chat",{
-method:"POST",
-headers:{"Content-Type":"application/x-www-form-urlencoded"},
-body:"question="+encodeURIComponent(q)
-})
+    const data = await res.json();
+    chatBox.innerHTML += `<div class="ai-msg">AI: ${data.reply}</div>`;
+    chatBox.scrollTop = chatBox.scrollHeight;
 
-let data = await res.json()
-document.getElementById("ans").innerText = data.answer
-}
+    document.getElementById('user-message').value = '';
+});
 </script>
+{% endblock %}
