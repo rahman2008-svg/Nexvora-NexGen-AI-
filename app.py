@@ -1,101 +1,124 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
 from tinydb import TinyDB, Query
-import brain, memory, utils
+import json
+import os
 
+# ---------------- Flask App Setup ----------------
 app = Flask(__name__)
-app.secret_key = "supersecretkey"
+app.secret_key = "YOUR_SECRET_KEY"  # Change this to something secure
+
+# ---------------- Flask Login Setup ----------------
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
 
 bcrypt = Bcrypt(app)
-login_manager = LoginManager()
-login_manager.login_view = "login"
-login_manager.init_app(app)
 
-# TinyDB for users
-db_users = TinyDB('users.json')
+# ---------------- Database Setup ----------------
+db_file = "users.json"
+if not os.path.exists(db_file):
+    with open(db_file, "w") as f:
+        json.dump([], f)
+
+ai_memory_file = "ai_memory.json"
+if not os.path.exists(ai_memory_file):
+    with open(ai_memory_file, "w") as f:
+        json.dump({}, f)
+
+db = TinyDB(db_file)
 UserQuery = Query()
 
+# ---------------- User Class ----------------
 class User(UserMixin):
-    def __init__(self, id, email, password):
+    def __init__(self, id, username, password):
         self.id = id
-        self.email = email
+        self.username = username
         self.password = password
 
 @login_manager.user_loader
 def load_user(user_id):
-    result = db_users.get(UserQuery.id == int(user_id))
-    if result:
-        return User(result['id'], result['email'], result['password'])
+    users = db.all()
+    for u in users:
+        if u["id"] == int(user_id):
+            return User(u["id"], u["username"], u["password"])
     return None
 
-@app.route('/')
+# ---------------- Routes ----------------
+@app.route("/")
 def home():
-    return redirect(url_for('login'))
+    return redirect(url_for("dashboard"))
 
-# Register
-@app.route('/register', methods=['GET', 'POST'])
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
-        password = bcrypt.generate_password_hash(request.form['password']).decode('utf-8')
-        user_id = len(db_users.all()) + 1
-        db_users.insert({'id': user_id, 'name': name, 'email': email, 'password': password})
-        return redirect(url_for('login'))
-    return render_template('register.html')
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        hashed_pw = bcrypt.generate_password_hash(password).decode("utf-8")
 
-# Login
-@app.route('/login', methods=['GET', 'POST'])
+        users = db.all()
+        if any(u["username"] == username for u in users):
+            return "Username already exists!"
+        
+        user_id = len(users) + 1
+        db.insert({"id": user_id, "username": username, "password": hashed_pw})
+        return redirect(url_for("login"))
+
+    return render_template("register.html")
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == 'POST':
-        email = request.form['email']
-        password = request.form['password']
-        user = db_users.get(UserQuery.email == email)
-        if user and bcrypt.check_password_hash(user['password'], password):
-            login_user(User(user['id'], user['email'], user['password']))
-            return redirect(url_for('dashboard'))
-        else:
-            return "Invalid Credentials"
-    return render_template('login.html')
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        users = db.all()
+        for u in users:
+            if u["username"] == username and bcrypt.check_password_hash(u["password"], password):
+                user = User(u["id"], u["username"], u["password"])
+                login_user(user)
+                return redirect(url_for("dashboard"))
+        return "Invalid username or password!"
+    return render_template("login.html")
 
-# Logout
-@app.route('/logout')
+@app.route("/logout")
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('login'))
+    return redirect(url_for("login"))
 
-# Dashboard
-@app.route('/dashboard')
+@app.route("/dashboard")
 @login_required
 def dashboard():
-    return render_template('dashboard.html')
+    return render_template("dashboard.html")
 
-# Chat API
-@app.route('/chat', methods=['POST'])
-@login_required
-def chat():
-    data = request.get_json()
-    question = data.get('question')
-    answer = brain.get_answer(question)
-    return jsonify({'answer': answer})
-
-# Teach AI API
-@app.route('/teach', methods=['POST'])
+# ---------------- AI Teach / Chat ----------------
+@app.route("/teach", methods=["GET", "POST"])
 @login_required
 def teach():
-    data = request.get_json()
-    question = data.get('question')
-    answer = data.get('answer')
-    memory.add_knowledge(question, answer)
-    return jsonify({'message': 'AI শেখানো হয়েছে!'})
+    if request.method == "POST":
+        question = request.form.get("question")
+        answer = request.form.get("answer")
+        with open(ai_memory_file, "r") as f:
+            memory = json.load(f)
+        memory[question] = answer
+        with open(ai_memory_file, "w") as f:
+            json.dump(memory, f, indent=4)
+        return jsonify({"status": "success", "message": "Question learned!"})
+    return render_template("teach.html")
 
-# Suggestion
-@app.route('/suggest')
+@app.route("/chat", methods=["POST"])
 @login_required
-def suggest():
-    return jsonify({"suggestion": "তুমি কি জানতে চাও — বাংলাদেশ, বিজ্ঞান, নাকি প্রযুক্তি?"})
+def chat():
+    user_question = request.form.get("question")
+    with open(ai_memory_file, "r") as f:
+        memory = json.load(f)
+    
+    # Simple exact-match AI
+    answer = memory.get(user_question, "এখনও এই প্রশ্ন শেখানো হয়নি।")
+    return jsonify({"answer": answer})
 
+# ---------------- Run App ----------------
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0')
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)

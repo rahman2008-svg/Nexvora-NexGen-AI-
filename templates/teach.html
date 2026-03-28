@@ -1,37 +1,10 @@
 {% extends 'base.html' %}
-
 {% block content %}
-<div class="container">
-    <h2>Teach AI</h2>
-    <form id="teach-form">
-        <label>Question:</label>
-        <input type="text" id="question" placeholder="Type your question..." required>
-        
-        <label>Answer:</label>
-        <input type="text" id="answer" placeholder="Type the answer..." required>
-        
-        <button type="submit">Teach AI</button>
-    </form>
-    <div id="teach-response"></div>
-</div>
-
-<script>
-document.getElementById('teach-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const question = document.getElementById('question').value;
-    const answer = document.getElementById('answer').value;
-
-    const res = await fetch('/teach', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({question, answer})
-    });
-
-    const data = await res.json();
-    document.getElementById('teach-response').innerText = data.message;
-
-    document.getElementById('question').value = '';
-    document.getElementById('answer').value = '';
-});
-</script>
+<h2>Teach AI</h2>
+<form id="teach-form">
+    <input type="text" name="question" placeholder="Question" required>
+    <input type="text" name="answer" placeholder="Answer" required>
+    <button type="submit">Teach</button>
+</form>
+<div id="status"></div>
 {% endblock %}
