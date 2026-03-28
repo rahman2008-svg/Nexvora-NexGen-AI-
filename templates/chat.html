@@ -1,0 +1,30 @@
+<h2>Nexvora NexGen AI 🤖</h2>
+
+<form id="chatForm">
+<input type="text" id="q" placeholder="Ask something">
+<button>Send</button>
+</form>
+
+<div id="ans"></div>
+
+<br>
+<a href="/teach">Teach</a> |
+<a href="/dashboard">Dashboard</a> |
+<a href="/logout">Logout</a>
+
+<script>
+chatForm.onsubmit = async(e)=>{
+e.preventDefault()
+
+let q = document.getElementById("q").value
+
+let res = await fetch("/chat",{
+method:"POST",
+headers:{"Content-Type":"application/x-www-form-urlencoded"},
+body:"question="+encodeURIComponent(q)
+})
+
+let data = await res.json()
+document.getElementById("ans").innerText = data.answer
+}
+</script>

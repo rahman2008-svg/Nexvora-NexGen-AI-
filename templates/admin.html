@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><title>Admin Panel</title></head>
+<body>
+<h2>Admin Panel - Users</h2>
+<table border="1">
+<tr><th>ID</th><th>Username</th><th>Role</th></tr>
+{% for user in users %}
+<tr>
+<td>{{ user.doc_id }}</td>
+<td>{{ user.username }}</td>
+<td>{{ user.role }}</td>
+</tr>
+{% endfor %}
+</table>
+<a href="/">Back to Chat</a>
+</body>
+</html>
