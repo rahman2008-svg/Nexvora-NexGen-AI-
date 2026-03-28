@@ -1,36 +1,31 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user
 from flask_bcrypt import Bcrypt
 from tinydb import TinyDB, Query
-import json
+from rapidfuzz import process
 import os
+import json
 
-# ---------------- Flask App Setup ----------------
 app = Flask(__name__)
-app.secret_key = "YOUR_SECRET_KEY"  # Change this to something secure
+app.secret_key = "secret123"
 
-# ---------------- Flask Login Setup ----------------
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
 
 bcrypt = Bcrypt(app)
 
-# ---------------- Database Setup ----------------
-db_file = "users.json"
-if not os.path.exists(db_file):
-    with open(db_file, "w") as f:
+# DB
+user_db = TinyDB("users.json")
+ai_db_file = "ai_memory.json"
+
+if not os.path.exists(ai_db_file):
+    with open(ai_db_file, "w") as f:
         json.dump([], f)
 
-ai_memory_file = "ai_memory.json"
-if not os.path.exists(ai_memory_file):
-    with open(ai_memory_file, "w") as f:
-        json.dump({}, f)
-
-db = TinyDB(db_file)
 UserQuery = Query()
 
-# ---------------- User Class ----------------
+# User class
 class User(UserMixin):
     def __init__(self, id, username, password):
         self.id = id
@@ -39,30 +34,34 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    users = db.all()
+    users = user_db.all()
     for u in users:
         if u["id"] == int(user_id):
             return User(u["id"], u["username"], u["password"])
     return None
 
-# ---------------- Routes ----------------
+# Routes
 @app.route("/")
 def home():
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("login"))
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        hashed_pw = bcrypt.generate_password_hash(password).decode("utf-8")
+        username = request.form["username"]
+        password = request.form["password"]
 
-        users = db.all()
-        if any(u["username"] == username for u in users):
-            return "Username already exists!"
-        
+        hashed = bcrypt.generate_password_hash(password).decode("utf-8")
+
+        users = user_db.all()
         user_id = len(users) + 1
-        db.insert({"id": user_id, "username": username, "password": hashed_pw})
+
+        user_db.insert({
+            "id": user_id,
+            "username": username,
+            "password": hashed
+        })
+
         return redirect(url_for("login"))
 
     return render_template("register.html")
@@ -70,16 +69,24 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        users = db.all()
+        username = request.form["username"]
+        password = request.form["password"]
+
+        users = user_db.all()
         for u in users:
             if u["username"] == username and bcrypt.check_password_hash(u["password"], password):
                 user = User(u["id"], u["username"], u["password"])
                 login_user(user)
                 return redirect(url_for("dashboard"))
-        return "Invalid username or password!"
+
+        return "Wrong credentials"
+
     return render_template("login.html")
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template("dashboard.html")
 
 @app.route("/logout")
 @login_required
@@ -87,38 +94,49 @@ def logout():
     logout_user()
     return redirect(url_for("login"))
 
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    return render_template("dashboard.html")
-
-# ---------------- AI Teach / Chat ----------------
+# Teach AI
 @app.route("/teach", methods=["GET", "POST"])
 @login_required
 def teach():
     if request.method == "POST":
-        question = request.form.get("question")
-        answer = request.form.get("answer")
-        with open(ai_memory_file, "r") as f:
-            memory = json.load(f)
-        memory[question] = answer
-        with open(ai_memory_file, "w") as f:
-            json.dump(memory, f, indent=4)
-        return jsonify({"status": "success", "message": "Question learned!"})
+        q = request.form["question"]
+        a = request.form["answer"]
+
+        with open(ai_db_file, "r") as f:
+            data = json.load(f)
+
+        data.append({"q": q, "a": a})
+
+        with open(ai_db_file, "w") as f:
+            json.dump(data, f)
+
+        return "Learned!"
+
     return render_template("teach.html")
 
-@app.route("/chat", methods=["POST"])
+# Chat AI
+@app.route("/chat", methods=["GET", "POST"])
 @login_required
 def chat():
-    user_question = request.form.get("question")
-    with open(ai_memory_file, "r") as f:
-        memory = json.load(f)
-    
-    # Simple exact-match AI
-    answer = memory.get(user_question, "এখনও এই প্রশ্ন শেখানো হয়নি।")
-    return jsonify({"answer": answer})
+    if request.method == "POST":
+        user_q = request.form["question"]
 
-# ---------------- Run App ----------------
+        with open(ai_db_file, "r") as f:
+            data = json.load(f)
+
+        questions = [item["q"] for item in data]
+
+        if len(questions) > 0:
+            match, score, index = process.extractOne(user_q, questions)
+
+            if score > 60:
+                return jsonify({"answer": data[index]["a"]})
+
+        return jsonify({"answer": "I don't know yet. Teach me!"})
+
+    return render_template("chat.html")
+
+# Run
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port)
